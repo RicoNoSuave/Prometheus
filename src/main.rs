@@ -589,7 +589,7 @@ impl App for Interface {
 fn main() {
     let settings: NativeOptions = NativeOptions {
         initial_window_size: Some(Vec2::new(540., 960.)),
-        // decorated: false,
+        decorated: false,
         drag_and_drop_support: true,
         ..Default::default()
     };
@@ -605,6 +605,4 @@ fn main() {
                 )
             )
         );
-
-    println!("We made it here, just to prove that the segfault is with the WSL drivers.");
 }
