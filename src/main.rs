@@ -8,6 +8,7 @@ use eframe::{
         Button,
         CentralPanel,
         Color32,
+        ComboBox,
         Context,
         FontData,
         FontDefinitions,
@@ -22,6 +23,7 @@ use eframe::{
         Key,
         Label,
         Layout,
+        Response,
         RichText,
         ScrollArea,
         Separator,
@@ -30,7 +32,7 @@ use eframe::{
         TextStyle::*,
         TopBottomPanel,
         Ui,
-        Vec2, ComboBox
+        Vec2
     },
     Frame,
     NativeOptions,
@@ -79,7 +81,7 @@ impl Font {
                             include_bytes!("../fonts/MesloLGS_NF_Regular.ttf")
                         )
                     );
-    
+
                 // Set MesloLGS to highest priority
                 font_def
                     .families
@@ -101,12 +103,14 @@ impl Font {
     }
 }
 
+// Enum for text size
 enum TextSize {
     Large,
     Medium,
     Small
 }
 
+// Enum for adding textsize to text
 enum TextStyle {
     Heading,
     StaticButton,
@@ -136,12 +140,14 @@ impl TextStyle {
     }
 }
 
+// Prometheus structure
 struct Interface {
     category: Category,
     country: Country,
     display_search: bool,
     font: Font,
     news: Result<Vec<NewsCard>, NewsAPIError>,
+    article: Option<NewsCard>,
     search: String,
     search_state: Option<String>,
     text_size: TextSize,
@@ -150,9 +156,11 @@ struct Interface {
 
 impl Interface {
     fn new() -> Self {
+        // Get api key
         dotenv().unwrap();
-
         let api_key: String = std::env::var("API_KEY").unwrap();
+
+        // Generate self
         Self {
             category: Category::General,
             country: Country::UnitedStates,
@@ -164,6 +172,7 @@ impl Interface {
                     &Country::UnitedStates,
                     ""
                 ),
+            article: None,
             search: "".to_string(),
             search_state: None,
             text_size: TextSize::Small,
@@ -171,10 +180,12 @@ impl Interface {
         }
     }
 
+    // helper to set fonts
     fn configure_fonts(&self, ctx: &Context) {
         ctx.set_fonts(self.font.define());
     }
 
+    // helper to set base text sizes
     fn set_text_style(&self, ctx: &Context) {
         let mut style: Style = (*ctx.style()).clone();
     
@@ -189,28 +200,146 @@ impl Interface {
         ctx.set_style(style);
     }
 
+    // update function to update news
     fn internal_update(&mut self) {
+        // Get api key
         dotenv().unwrap();
         let api_key: String = std::env::var("API_KEY").unwrap();
 
+        // Resubmit for update
         self.news = NewsAPIResponse::new(
             api_key,
             &self.category,
             &self.country,
             &self.search
         );
+
+        self.article = None;
     }
 
-    fn render_ui(&self, ui: &mut Ui) {
-        match &self.news {
-            Ok(_e) => self.render_news(ui),
-            Err(e) =>{
-                ui.add(Label::new(format!("{}", e.to_string())));
+    // function to enrich text to RichText
+    fn enrich(string: String, style: &TextStyle, size: &TextSize) -> RichText {
+        RichText::new(string).font(style.set_style(size))
+    }
+
+    // Render UI controller (allows for display of errors)
+    fn render_ui(&mut self, ui: &mut Ui) {
+        if self.article.is_some() {
+            self.render_article(ui);
+        } else {
+            match &self.news {
+                Ok(_e) => self.render_news(ui),
+                Err(e) =>{
+                    ui.add(Label::new(format!("{}", e.to_string())));
+                }
             }
         }
     }
 
-    fn render_news(&self, ui: &mut Ui) {
+    fn render_article(&mut self, ui: &mut Ui) {
+        let news: NewsCard = self.article.clone().unwrap();
+        ui.add_space(PADDING);
+
+        // Create fields
+        let mut trim_title: String = "".to_string();
+        let split_title = news.title().split(" - ");
+        for str in split_title {
+            if trim_title == "".to_string() {
+                trim_title = format!("{}", str);
+            }
+        }
+
+        let title: RichText = Self::enrich(
+            trim_title,
+            &TextStyle::Title,
+            &self.text_size
+        );
+        let date: RichText = Self::enrich(
+            news.date().to_string(),
+            &TextStyle::Body,
+            &self.text_size
+        );
+        let mut author: Option<RichText> = None;
+        if news.author().is_some() {
+            author = Some(Self::enrich(
+                format!("By: {}", news.author().unwrap()),
+                &TextStyle::Body,
+                    &self.text_size
+                )
+            )
+        }
+        let mut trim_content: String = "".to_string();
+        let split_content = news.content().unwrap().split("[");
+        for str in split_content {
+            if trim_content == "".to_string() {
+                trim_content = format!("{}", str);
+            }
+        }
+        let content: RichText = Self::enrich(
+            trim_content,
+            &TextStyle::Body,
+            &self.text_size
+        );
+
+        // Set Color
+        let title_color: Color = Color::White;
+
+        // Render
+        ui.colored_label(title_color.color(), title);
+        ui.add_space(PADDING);
+        if author.is_some() {
+            ui.add(Label::new(author.unwrap()));
+            ui.add_space(PADDING);
+        }
+        ui.add(Label::new(date));
+        ui.add_space(PADDING);
+        ui.add(Label::new(content));
+        ui.add(Label::new(""));
+
+        // Add below links and buttons
+        let ret_btn_txt: RichText = Self::enrich(
+            "return to news".to_string(),
+            &TextStyle::Button,
+            &self.text_size
+        );
+
+        let url_txt = Self::enrich(
+            "read more online ⤴".to_string(),
+            &TextStyle::Button,
+            &self.text_size
+        );
+
+        egui::menu::bar(ui, |ui| 
+            {
+                ui.with_layout(
+                    Layout::left_to_right(Align::Min),
+                    |ui: &mut Ui| {
+                        ui.add_space(PADDING);
+                        let ret_btn = ui.add(Button::new(ret_btn_txt));
+                        if ret_btn.clicked() {
+                            self.article = None;
+                        }
+                    }
+                );
+
+                let url_color: Color = Color::Cyan;
+                ui.style_mut()
+                    .visuals.hyperlink_color = url_color.color();
+
+                ui.with_layout(
+                    Layout::right_to_left(Align::Min),
+                    |ui| {
+                        ui.add_space(PADDING);
+                        ui.add(Hyperlink::from_label_and_url(url_txt, news.url()));
+                    }
+                );
+            }
+        );
+    }
+
+    // Render news as presented
+    fn render_news(&mut self, ui: &mut Ui) {
+        // Create iter over news
         let mut iter: std::slice::Iter<'_, NewsCard> = 
             self
             .news
@@ -218,20 +347,19 @@ impl Interface {
             .unwrap()
             .iter();
 
+        // While there are news articles in news
         while let Some(newscard) = iter.next() {
+            // If the news article wasn't removed at call
             if newscard.title() != "[Removed]" {
                 // Pad
                 ui.add_space(PADDING);
 
                 // Create title
-                let title: RichText =
-                    RichText::new(
-                        format!("▶ {}", newscard.title())
-                    )
-                    .font(
-                        TextStyle::Title
-                        .set_style(&self.text_size)
-                    );
+                let title: RichText = Self::enrich(
+                    format!("▶ {}", newscard.title()),
+                    &TextStyle::Title,
+                    &self.text_size
+                );
 
                 // Set Color
                 let title_color: Color = Color::White;
@@ -245,41 +373,56 @@ impl Interface {
                     ui.add_space(PADDING);
 
                     // Create Object
-                    let description: RichText =
-                        RichText::new(
-                            newscard
-                            .description()
-                            .unwrap()
-                        )
-                        .font(
-                            TextStyle::Body.set_style(&self.text_size)
-                        );
+                    let description: RichText = Self::enrich(
+                        newscard.description().unwrap().to_string(),
+                        &TextStyle::Body,
+                        &self.text_size
+                    );
 
                     // Render
                     ui.add(Label::new(description));
                 }
 
-                // Set URL color
-                let url_color: Color = Color::Cyan;
-                ui.style_mut()
-                    .visuals.hyperlink_color = url_color.color();
+                egui::menu::bar(ui, |ui| 
+                    {
+                        if newscard.content().is_some() {
+                            ui.with_layout(Layout::left_to_right(Align::Max),
+                                |ui| {
+                                    let ret_btn_txt: RichText = Self::enrich(
+                                        "read article".to_string(),
+                                        &TextStyle::Button,
+                                        &self.text_size
+                                    );
+        
+                                    ui.add_space(PADDING);
+                                    let prev = ui.add(Button::new(ret_btn_txt));
+                                    if prev.clicked() {
+                                        self.article = Some(newscard.clone());
+                                    }
+                                }
+                            );
+                        }
+        
+                        let url_color: Color = Color::Cyan;
+                        ui.style_mut()
+                            .visuals.hyperlink_color = url_color.color();
+        
+                        ui.with_layout(
+                            Layout::right_to_left(Align::Max),
+                            |ui| {
+                                ui.add_space(PADDING);
+                                // Create Link
+                                let link: RichText = Self::enrich(
+                                    "read more online ⤴".to_string(),
+                                    &TextStyle::Button,
+                                    &self.text_size);
 
-                // Pad
-                ui.add_space(PADDING);
+                                ui.add(Hyperlink::from_label_and_url(link, newscard.url()));
+                            }
+                        );
+                    }
+                );
 
-                // Set style
-                ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                    // Create Link
-                    let link: RichText = RichText::new("read more ⤴")
-                    .font(
-                        TextStyle::Button.set_style(&self.text_size)
-                    );
-
-                    ui.add(Hyperlink::from_label_and_url(link, newscard.url()));
-                });
-
-                // Add separator
-                ui.add_space(PADDING);
                 ui.add(Separator::default());
             }
         }

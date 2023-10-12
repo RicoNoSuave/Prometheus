@@ -437,7 +437,7 @@ impl NewsAPIResponse {
 }
 
 /// Article Struct
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct NewsCard {
     author: Option<String>,
@@ -483,18 +483,33 @@ struct ISODate {
     day: i32,
     hour: i32,
     minute: i32,
-    timezone: String
+    timezone: String,
+    us: bool
 }
 
 impl ToString for ISODate {
     fn to_string(&self) -> String {
-        format!("{}, {} {}, {} - {} {}",
-            self.get_day(),
-            self.get_month(),
-            self.day,
-            self.year,
-            self.get_time(),
-            self.timezone)
+        if self.us {
+            format!("{}, {} {}, {} - {} {}",
+                self.get_day(),
+                self.get_month(),
+                self.day,
+                self.year,
+                self.get_time(),
+                self.timezone
+            )
+        } else {
+            format!("{}, {} {} {} - {} {}",
+                self.get_day(),
+                self.day,
+                self.get_month(),
+                self.year,
+                self.get_time(),
+                self.timezone
+            )
+        }
+
+        
     }
 }
 
@@ -551,6 +566,8 @@ impl ISODate {
         } else {
             article_offset = current_utc_offset;
         }
+
+        let us: bool = article_offset >= -8 && article_offset <= -5;
         let timezone: String = Self::timezone(article_offset);
 
         // Create ISODate object
@@ -560,7 +577,8 @@ impl ISODate {
             day: day,
             hour: hour,
             minute: minute,
-            timezone: timezone
+            timezone: timezone,
+            us: us
         };
 
         // Reset the current values with the utc offset
@@ -781,10 +799,17 @@ impl ISODate {
     }
 
     fn get_time(&self) -> String {
-        if self.hour > 12 {
-            return format!("{}:{} p.m.", (self.hour - 12), self.minute);
+        let minute_str: String;
+        if self.minute < 10 {
+            minute_str = format!("0{}", self.minute);
         } else {
-            return format!("{}:{} a.m.", self.hour, self.minute);
+            minute_str = format!("{}", self.minute);
+        }
+
+        if self.hour > 12 {
+            return format!("{}:{} p.m.", (self.hour - 12), minute_str);
+        } else {
+            return format!("{}:{} a.m.", self.hour, minute_str);
         }
     }
 }
