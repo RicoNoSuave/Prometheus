@@ -36,7 +36,7 @@ use eframe::{
     },
     Frame,
     NativeOptions,
-    run_native
+    run_native, IconData
 };
 use newsapi::{
     Category,
@@ -63,8 +63,7 @@ impl Color {
 }
 
 enum Font {
-    MesloLGS,
-    Mono
+    MesloLGS
 }
 
 impl Font {
@@ -460,7 +459,7 @@ impl Interface {
 
                 let mut pass: bool = false;
                 let srch_btn_txt: RichText = RichText::new("🔍").font(TextStyle::StaticButton.set_style(&TextSize::Large));
-                let srch_btn: egui::Response = ui.add(Button::new(srch_btn_txt));
+                let srch_btn: Response = ui.add(Button::new(srch_btn_txt));
 
                 if self.display_search {
                     self.search_state = None;
@@ -587,9 +586,14 @@ impl App for Interface {
 }
 
 fn main() {
+    let img_path: &std::path::Path = std::path::Path::new("./logo/prometheus_icon.png");
+    let bytes: Result<Vec<u8>, std::io::Error> = std::fs::read(img_path);
+    let img: Result<IconData, image::ImageError> = eframe::IconData::try_from_png_bytes(&bytes.unwrap());
+    let logo: Option<IconData> = Some(img.unwrap());
     let settings: NativeOptions = NativeOptions {
+        icon_data: logo,
         initial_window_size: Some(Vec2::new(540., 960.)),
-        decorated: false,
+        // decorated: false,
         drag_and_drop_support: true,
         ..Default::default()
     };
