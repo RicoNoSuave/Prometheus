@@ -40,7 +40,7 @@ impl ToString for Endpoint {
 }
 
 /// Private Country enum
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Country {
     Argentina,
     Australia,
@@ -157,6 +157,67 @@ impl ToString for Country {
             Self::UnitedKingdom => "gb".to_string(),
             Self::UnitedStates => "us".to_string(),
             Self::Venezuela => "ve".to_string()
+        }
+    }
+}
+
+impl Country {
+    pub fn stringify(&self) -> String {
+        match self {
+            Self::Argentina => "Argentina".to_string(),
+            Self::Australia => "Australia".to_string(),
+            Self::Austria => "Austria".to_string(),
+            Self::Belgium => "Belgium".to_string(),
+            Self::Brazil => "Brazil".to_string(),
+            Self::Bulgaria => "Bulgaria".to_string(),
+            Self::Canada => "Canada".to_string(),
+            Self::China => "China".to_string(),
+            Self::Colombia => "Colombia".to_string(),
+            Self::Cuba => "Cuba".to_string(),
+            Self::Czechia => "Czechia".to_string(),
+            Self::Egypt => "Egypt".to_string(),
+            Self::France => "France".to_string(),
+            Self::Germany => "Germany".to_string(),
+            Self::Greece => "Greece".to_string(),
+            Self::HongKong => "Hong Kong".to_string(),
+            Self::Hungary => "Hungary".to_string(),
+            Self::India => "India".to_string(),
+            Self::Indonesia => "Indonesia".to_string(),
+            Self::Ireland => "Ireland".to_string(),
+            Self::Israel => "Israel".to_string(),
+            Self::Italy => "Italy".to_string(),
+            Self::Japan => "Japan".to_string(),
+            Self::Latvia => "Latvia".to_string(),
+            Self::Lithuania => "Lithuania".to_string(),
+            Self::Malaysia => "Malaysia".to_string(),
+            Self::Mexico => "Mexico".to_string(),
+            Self::Morocco => "Morocco".to_string(),
+            Self::Netherlands => "Netherlands".to_string(),
+            Self::NewZealand => "New Zealand".to_string(),
+            Self::Nigeria => "Nigeria".to_string(),
+            Self::Norway => "Norway".to_string(),
+            Self::Philippines => "Philippines".to_string(),
+            Self::Poland => "Poland".to_string(),
+            Self::Portugal => "Portugal".to_string(),
+            Self::Romania => "Romania".to_string(),
+            Self::Russia => "Russia".to_string(),
+            Self::SaudiArabia => "Saudi Arabia".to_string(),
+            Self::Serbia => "Serbia".to_string(),
+            Self::Singapore => "Singapore".to_string(),
+            Self::Slovakia => "Slovakia".to_string(),
+            Self::Slovenia => "Slovenia".to_string(),
+            Self::SouthAfrica => "South Africa".to_string(),
+            Self::SouthKorea => "South Korea".to_string(),
+            Self::Sweden => "Sweden".to_string(),
+            Self::Switzerland => "Switzerland".to_string(),
+            Self::Taiwan => "Taiwan".to_string(),
+            Self::Thailand => "Thailand".to_string(),
+            Self::Turkey => "Türkiye".to_string(),
+            Self::Ukraine => "Ukraine".to_string(),
+            Self::UnitedArabEmirates => "United Arab Emirates".to_string(),
+            Self::UnitedKingdom => "United Kingdom".to_string(),
+            Self::UnitedStates => "United States".to_string(),
+            Self::Venezuela => "Venezuela".to_string()
         }
     }
 }
