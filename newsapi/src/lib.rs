@@ -511,12 +511,31 @@ pub struct NewsCard {
 
 impl NewsCard {
     // Getters
-    pub fn author(&self) -> Option<&String> {
-        self.author.as_ref()
+    pub fn is_author(&self) -> bool {
+        self.author.is_some()
     }
 
-    pub fn content(&self) -> Option<&String> {
-        self.content.as_ref()
+    pub fn author(&self) -> &str {
+        &self.author.as_ref().unwrap()
+    }
+
+    pub fn is_content(&self) -> bool {
+        self.content.is_some()
+    }
+
+    pub fn content(&self) -> &str {
+        let split_content: std::str::Split<'_, &str> = self.
+            content
+            .as_ref()
+            .unwrap()
+            .split("[");
+        let mut ret_val: &str = "";
+        for str in split_content {
+            if ret_val.is_empty() {
+                ret_val = str;
+            }
+        }
+        ret_val
     }
 
     pub fn date(&self) -> String {
@@ -524,12 +543,28 @@ impl NewsCard {
         date_time.to_string()
     }
 
-    pub fn description(&self) -> Option<&String> {
-        self.description.as_ref()
+    pub fn is_description(&self) -> bool {
+        self.description.is_some()
+    }
+
+    pub fn description(&self) -> &str {
+        self.description.as_ref().unwrap()
     }
 
     pub fn title(&self) -> &str {
         &self.title
+    }
+
+    pub fn trim_title(&self) -> &str {
+        let split_title: std::str::Split<'_, &str> = self.title.split(" - ");
+        let mut ret_val: &str = "";
+        for str in split_title {
+            if ret_val.is_empty() {
+                ret_val = str;
+            }
+        }
+
+        ret_val
     }
 
     pub fn url(&self) -> &str {

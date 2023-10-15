@@ -32,6 +32,7 @@ use eframe::{
         Sense,
         Separator,
         TextEdit,
+        text_edit::TextEditOutput,
         TopBottomPanel,
         Ui,
         Vec2,
@@ -47,6 +48,7 @@ use eframe::{
 use egui_extras::install_image_loaders;
 use image::ImageError;
 use std::{
+    env::var,
     fs::read,
     io::Error,
     path::Path
@@ -59,30 +61,29 @@ use newsapi::{
     NewsCard
 };
 
-const PADDING: f32 = 5.;
-
-enum Color {
-    Cyan,
-    White
-}
-
-impl Color {
-    fn color(&self) -> Color32 {
-        match self {
-            Self::Cyan => Color32::from_rgb(0, 255, 255),
-            Self::White => Color32::from_rgb(0,0,0)
-        }
-    }
-}
+// Constant padding
+const PADDING: f32 = 5.0;
 
 // Enum for text size
+#[derive(Clone, Copy, PartialEq)]
 enum TextSize {
     Large,
     Medium,
     Small
 }
 
-// Enum for adding textsize to text
+// String for menu
+impl ToString for TextSize {
+    fn to_string(&self) -> String {
+        match self {
+            TextSize::Large => "Large".to_string(),
+            TextSize::Medium => "Medium".to_string(),
+            TextSize::Small => "Small".to_string()
+        }
+    }
+}
+
+// Enum for adding TextSize to text
 enum TextStyle {
     Heading,
     StaticButton,
@@ -92,70 +93,241 @@ enum TextStyle {
     Button
 }
 
+// Sets text_size to all text
 impl TextStyle {
     fn set_style(&self, size: &TextSize) -> FontId {
         let modifier: f32;
         match size {
-            TextSize::Large => modifier = 4.,
-            TextSize::Medium => modifier = 2.,
-            TextSize::Small => modifier = 0.
+            TextSize::Large => modifier = 4.0,
+            TextSize::Medium => modifier = 2.0,
+            TextSize::Small => modifier = 0.0
         };
 
 		match self {
 			Self::Heading => FontId::new(30.0, Proportional),
             Self::Search => FontId::new(16.0 + modifier, Proportional),
             Self::StaticButton => FontId::new(20.0, Proportional),
-            Self::Title => FontId::new(14.0 + modifier, Proportional),
-			Self::Body => FontId::new(12.0 + modifier, Proportional),
+            Self::Title => FontId::new(12.0 + modifier, Proportional),
+			Self::Body => FontId::new(10.0 + modifier, Proportional),
 			Self::Button => FontId::new(10.0 + modifier, Proportional),
 		}
     }
 }
 
-// Prometheus structure
-struct Interface{
+// State struct
+struct State {
     article: Option<NewsCard>,
-    category: Category,
-    country: Country,
-    display_country: bool,
-    display_search: bool,
-    display_settings: bool,
-    news: Result<Vec<NewsCard>, NewsAPIError>,
-    search: String,
+    country_menu: bool,
+    night_mode: bool,
+    searchbar: bool,
     search_topic: Option<String>,
     startup: bool,
-    text_size: TextSize,
+    text_size_menu: bool,
+    text_size: TextSize
 }
 
-impl Interface {
+// State-changing functions
+impl State {
     fn new() -> Self {
-        // Get api key
-        dotenv().unwrap();
-        let api_key: String = std::env::var("API_KEY").unwrap();
-
-        // Generate self
         Self {
             article: None,
-            category: Category::General,
-            country: Country::UnitedStates,
-            display_country: false,
-            display_search: false,
-            display_settings: false,
-            news: NewsAPIResponse::new(
-                    api_key,
-                    &Category::General,
-                    &Country::UnitedStates,
-                    ""
-                ),
-            search: "".to_string(),
+            country_menu: false,
+            night_mode: false,
+            searchbar: false,
             search_topic: None,
             startup: true,
             text_size: TextSize::Small,
+            text_size_menu: false
+        }
+    }
+
+    fn set_to_default(&mut self) {
+        self.article = None;
+        self.country_menu = false;
+        self.searchbar = false;
+        self.text_size_menu = false;
+        self.search_topic = None;
+    }
+
+    fn is_article(&self) -> bool {
+        self.article.is_some()
+    }
+
+    fn get_article(&self) -> NewsCard {
+        self.article.clone().unwrap()
+    }
+
+    fn set_article(&mut self, article: Option<NewsCard>) {
+        self.article = article;
+    }
+
+    fn is_country_menu(&self) -> bool {
+        self.country_menu
+    }
+
+    fn toggle_country_menu(&mut self, on_off: bool) {
+        self.country_menu = on_off;
+    }
+
+    fn is_night_mode(&self) -> bool {
+        self.night_mode
+    }
+
+    fn toggle_night_mode(&mut self) {
+        self.night_mode = !self.night_mode;
+    }
+
+    fn get_color(&self) -> Color32 {
+        if self.night_mode {
+            Color32::from_rgb(255,255,255)
+        } else {
+            Color32::from_rgb(0, 0, 0)
+        }
+    }
+
+    fn is_searchbar(&self) -> bool {
+        self.searchbar
+    }
+
+    fn toggle_searchbar(&mut self, on_off: bool) {
+        self.searchbar = on_off;
+    }
+
+    fn is_search_topic(&self) -> bool {
+        self.search_topic.is_some()
+    }
+
+    fn get_search_topic(&self) -> String {
+         self.search_topic.clone().unwrap()
+    }
+
+    fn set_search_topic(&mut self, topic: Option<String>) {
+        self.search_topic = topic;
+    }
+
+    fn is_startup(&self) -> bool {
+        self.startup
+    }
+
+    fn toggle_startup(&mut self) {
+        self.startup = false;
+    }
+
+    fn get_text_size(&self) -> &TextSize {
+        &self.text_size
+    }
+
+    fn set_text_size(&mut self, text_size: TextSize) {
+        self.text_size = text_size;
+    }
+
+    fn is_text_size_menu(&self) -> bool {
+        self.text_size_menu
+    }
+
+    fn toggle_text_size_menu(&mut self, on_off: bool) {
+        self.text_size_menu = on_off;
+    }
+}
+
+// NewsAPI struct
+struct NewsAPI {
+    category: Category,
+    country: Country,
+    news: Result<Vec<NewsCard>, NewsAPIError>,
+    search: String
+}
+
+// NewsAPI functions
+impl NewsAPI {
+    fn new() -> Self {
+        // Get api key
+        dotenv().unwrap();
+        let api_key: String = var("API_KEY").unwrap();
+
+        // Create new self
+        Self {
+            category: Category::General,
+            country: Country::UnitedStates,
+            news: NewsAPIResponse::new(
+                api_key,
+                &Category::General,
+                &Country::UnitedStates,
+                ""
+            ),
+            search: "".to_string()
+        }
+    }
+
+    fn update(&mut self) {
+        // Get api key
+        dotenv().unwrap();
+        let api_key: String = var("API_KEY").unwrap();
+
+        self.news = NewsAPIResponse::new(
+            api_key,
+            &self.category,
+            &self.country,
+            &self.search
+        )
+    }
+
+    fn get_category(&self) -> Category {
+        self.category
+    }
+
+    fn set_category(&mut self, category: Category) {
+        self.category = category;
+        if category != Category::Search {
+            self.update();
+        }
+    }
+
+    fn get_country(&self) -> Country {
+        self.country
+    }
+
+    fn set_country(&mut self, country: Country) {
+        self.country = country;
+        self.update();
+    }
+
+    fn get_api_call(&self) -> &Result<Vec<NewsCard>, NewsAPIError> {
+        &self.news
+    }
+
+    fn get_news(&self) -> Vec<NewsCard> {
+        self.news.as_ref().unwrap().to_owned()
+    }
+
+    fn get_search(&self) -> String {
+        self.search.to_string()
+    }
+
+    fn set_search(&mut self, search: &str) {
+        self.search = search.to_string();
+        self.update();
+    }
+}
+
+// Prometheus structure
+struct Prometheus {
+    api_response: NewsAPI,
+    state: State
+}
+
+impl Prometheus {
+    fn new() -> Self {
+        // Generate self
+        Self {
+            api_response: NewsAPI::new(),
+            state: State::new()
         }
     }
 
     // helper to set fonts
     fn configure_fonts(&mut self, ctx: &Context) {
+        // Get default font definitions
         let mut font_def: FontDefinitions = FontDefinitions::default();
 
         // Install MesloLGS
@@ -171,43 +343,41 @@ impl Interface {
         // Set MesloLGS to highest priority
         font_def
             .families
-            .get_mut(&FontFamily::Proportional)
+            .get_mut(
+                &FontFamily::Proportional
+            )
             .unwrap()
-            .insert(0, "MesloLGS".to_owned());
+            .insert(
+                0,
+                "MesloLGS".to_owned()
+            );
 
         // Set MesloLGS as fallback
         font_def
             .families
-            .get_mut(&FontFamily::Monospace)
+            .get_mut(
+                &FontFamily::Monospace
+            )
             .unwrap()
-            .push("MesloLGS".to_owned());
+            .push(
+                "MesloLGS".to_owned()
+            );
 
+        // Load new font definitions to context
         ctx.set_fonts(font_def);
     }
 
-    // update function to update news
-    fn internal_update(&mut self) {
-        // Get api key
-        dotenv().unwrap();
-        let api_key: String = std::env::var("API_KEY").unwrap();
-
-        // Resubmit for update
-        self.news = NewsAPIResponse::new(
-            api_key,
-            &self.category,
-            &self.country,
-            &self.search
-        );
-
-        self.article = None;
-    }
-
-    // Render UI controller (allows for display of errors)
+    // UI controller
     fn render_ui(&mut self, ui: &mut Ui) {
-        if self.article.is_some() {
+        // If there is an article
+        if self.state.is_article() {
+            // Render the article
             self.render_article(ui);
-        } else {
-            match &self.news {
+        }
+
+        else {
+            // Parse news
+            match self.api_response.get_api_call() {
                 Ok(_e) => self.render_news(ui),
                 Err(e) =>{
                     ui.add(Label::new(format!("{}", e.to_string())));
@@ -217,192 +387,185 @@ impl Interface {
     }
 
     fn render_article(&mut self, ui: &mut Ui) {
-        let news: NewsCard = self.article.clone().unwrap();
-        ui.add_space(PADDING);
+        // Get article
+        let news: NewsCard = self.state.get_article();
 
-        // Create fields
-        let mut trim_title: &str = "";
-        let split_title = news.title().split(" - ");
-        for str in split_title {
-            if trim_title == "" {
-                trim_title = str;
-            }
+        // Render title
+        ui.add_space(PADDING);
+        let title: RichText = enrich(
+            news.trim_title(),
+            &TextStyle::Title,
+            self.state.get_text_size()
+        );
+        ui.add(Label::new(title));
+
+        // Render author
+        if news.is_author() {
+            ui.add_space(PADDING);
+            let author: RichText = enrich(
+                &format!("By: {}", news.author()),
+                &TextStyle::Body,
+                self.state.get_text_size()
+            );
+            ui.add(Label::new(author));
         }
 
-        let title: RichText = enrich(
-            trim_title,
-            &TextStyle::Title,
-            &self.text_size
-        );
+        // Render date
+        ui.add_space(PADDING);
         let date: RichText = enrich(
             &news.date(),
             &TextStyle::Body,
-            &self.text_size
+            self.state.get_text_size()
         );
-        let mut author: Option<RichText> = None;
-        if news.author().is_some() {
-            author = Some(enrich(
-                &format!("By: {}", news.author().unwrap()),
-                &TextStyle::Body,
-                    &self.text_size
-                )
-            )
-        }
-        let mut trim_content: &str = "";
-        let split_content = news.content().unwrap().split("[");
-        for str in split_content {
-            if trim_content == "" {
-                trim_content = str;
-            }
-        }
-        let content: RichText = enrich(
-            trim_content,
-            &TextStyle::Body,
-            &self.text_size
-        );
-
-        // Set Color
-        let title_color: Color = Color::White;
-
-        // Render
-        ui.colored_label(title_color.color(), title);
-        ui.add_space(PADDING);
-        if author.is_some() {
-            ui.add(Label::new(author.unwrap()));
-            ui.add_space(PADDING);
-        }
         ui.add(Label::new(date));
+
+        // Render content
         ui.add_space(PADDING);
+        let content: RichText = enrich(
+            &format!("{}\n", news.content()),
+            &TextStyle::Body,
+            self.state.get_text_size()
+        );
         ui.add(Label::new(content));
-        ui.add(Label::new(""));
 
-        // Add below links and buttons
-        let ret_btn_txt: RichText = enrich(
-            "return to news",
-            &TextStyle::Button,
-            &self.text_size
-        );
-
-        let url_txt = enrich(
-            "read more online ⤴",
-            &TextStyle::Button,
-            &self.text_size
-        );
-
-        menu::bar(ui, |ui| 
-            {
+        // Add links and buttons below
+        menu::bar(
+            ui,
+            |ui: &mut Ui| {
+                // Start from left
                 ui.with_layout(
-                    Layout::left_to_right(Align::Min),
+                    Layout::left_to_right(
+                        Align::Center),
                     |ui: &mut Ui| {
+                        // Create return button
                         ui.add_space(PADDING);
-                        let ret_btn = ui.add(Button::new(ret_btn_txt));
+                        let ret_btn_txt: RichText = enrich(
+                            "Return to News",
+                            &TextStyle::Button,
+                            &self.state.get_text_size()
+                        );
+                        let ret_btn: Response = ui
+                        .add(
+                            Button::new(ret_btn_txt)
+                        );
+
+                        // Handle return buttton
                         if ret_btn.clicked() {
-                            self.article = None;
+                            self.state.set_article(None);
                         }
                     }
                 );
 
-                let url_color: Color = Color::Cyan;
-                ui.style_mut()
-                    .visuals.hyperlink_color = url_color.color();
-
+                // Now the right
                 ui.with_layout(
-                    Layout::right_to_left(Align::Min),
-                    |ui| {
+                    Layout::right_to_left(
+                        Align::Center),
+                    |ui: &mut Ui| {
+                        // Create hyperlink
                         ui.add_space(PADDING);
-                        ui.add(Hyperlink::from_label_and_url(url_txt, news.url()));
+                        let url_txt = enrich(
+                            "Read More Online ⤴",
+                            &TextStyle::Button,
+                            &self.state.get_text_size()
+                        );
+                        let link_btn: Response = ui.add(
+                            Hyperlink::from_label_and_url(
+                                url_txt, news.url()
+                            )
+                        );
+                        if link_btn.clicked() {
+                            self.state.set_article(None);
+                        }
                     }
                 );
             }
         );
     }
 
-    // Render news as presented
+    // Render News
     fn render_news(&mut self, ui: &mut Ui) {
-        // Create iter over news
-        let mut iter: std::slice::Iter<'_, NewsCard> = 
-            self
-            .news
-            .as_ref()
-            .unwrap()
-            .iter();
-
-        // While there are news articles in news
-        while let Some(newscard) = iter.next() {
-            // If the news article wasn't removed at call
+        // For all news
+        for newscard in self.api_response.get_news() {
+            // If the article exits
             if newscard.title() != "[Removed]" {
-                // Pad
+                // Render title
                 ui.add_space(PADDING);
-
-                // Create title
                 let title: RichText = enrich(
                     &format!("▶ {}", newscard.title()),
                     &TextStyle::Title,
-                    &self.text_size
+                    &self.state.get_text_size()
+                );
+                ui.colored_label(
+                    self.state.get_color(),
+                    title
                 );
 
-                // Set Color
-                let title_color: Color = Color::White;
-
-                // Render
-                ui.colored_label(title_color.color(), title);
-
-                // Create description if it exists
-                if newscard.description().is_some() {
-                    // Pad
+                // Render description
+                if newscard.is_description() {
                     ui.add_space(PADDING);
-
-                    // Create Object
                     let description: RichText = enrich(
-                        newscard.description().unwrap(),
+                        newscard.description(),
                         &TextStyle::Body,
-                        &self.text_size
+                        &self.state.get_text_size()
                     );
-
-                    // Render
                     ui.add(Label::new(description));
                 }
 
-                egui::menu::bar(ui, |ui| 
-                    {
-                        if newscard.content().is_some() {
-                            ui.with_layout(Layout::left_to_right(Align::Max),
-                                |ui| {
-                                    let ret_btn_txt: RichText = enrich(
-                                        "read article",
+                // Add spacing for vertical
+                ui.add_space(PADDING);
+
+                // Render bottom menu
+                menu::bar(
+                    ui,
+                    |ui: &mut Ui| {
+                        // Start on left if there is content
+                        if newscard.is_content() {
+                            ui.with_layout(
+                                Layout::left_to_right(Align::Center),
+                                |ui: &mut Ui| {
+                                    // Add read button
+                                    let read_btn_txt: RichText = enrich(
+                                        "Read Article",
                                         &TextStyle::Button,
-                                        &self.text_size
+                                        &self.state.text_size
                                     );
-        
-                                    ui.add_space(PADDING);
-                                    let prev = ui.add(Button::new(ret_btn_txt));
-                                    if prev.clicked() {
-                                        self.article = Some(newscard.clone());
+                                    let read: Response = ui.add(
+                                        Button::new(
+                                            read_btn_txt
+                                        )
+                                    );
+                                    if read.clicked() {
+                                        self.state.set_article(
+                                            Some(newscard.to_owned())
+                                        );
                                     }
                                 }
                             );
                         }
-        
-                        let url_color: Color = Color::Cyan;
-                        ui.style_mut()
-                            .visuals.hyperlink_color = url_color.color();
-        
-                        ui.with_layout(
-                            Layout::right_to_left(Align::Max),
-                            |ui| {
-                                ui.add_space(PADDING);
-                                // Create Link
-                                let link: RichText = enrich(
-                                    "read more online ⤴",
-                                    &TextStyle::Button,
-                                    &self.text_size);
 
-                                ui.add(Hyperlink::from_label_and_url(link, newscard.url()));
+                        // Now do right
+                        ui.with_layout(
+                            Layout::right_to_left(Align::Center),
+                            |ui: &mut Ui| {
+                                // Add hyperlink
+                                ui.add_space(PADDING);
+                                let url: RichText = enrich(
+                                    "Read Online ⤴",
+                                    &TextStyle::Button,
+                                    &self.state.get_text_size()
+                                );
+                                ui.add(Hyperlink::from_label_and_url(
+                                    url,
+                                    newscard.url()
+                                    )
+                                );
                             }
                         );
+
                     }
                 );
 
+                // Add separator
                 ui.add(Separator::default());
             }
         }
@@ -410,157 +573,213 @@ impl Interface {
 
     // Header function
     fn render_header(&mut self, ui: &mut Ui) {
-
         // Set header to single row
-        egui::menu::bar(ui, |ui| {
-            // Start from left
-            ui.with_layout(Layout::left_to_right(Align::Center),
-                |ui| {
-                    // Side buffer
-                    ui.add_space(PADDING);
+        menu::bar(
+            ui,
+            |ui| {
+                // Start from left
+                ui.with_layout(Layout::left_to_right(Align::Center),
+                    |ui| {
+                        // Side buffer
+                        ui.add_space(PADDING);
 
-                    // Get current category
-                    let heading: RichText = enrich(
-                        &self.category.to_string(),
-                        &TextStyle::Heading,
-                        &self.text_size
-                    );
-
-                    // Create combo box of category
-                    ComboBox::from_label(" ")
-                        .selected_text(heading)
-                        .width(180.)
-                        .show_ui(ui,
-                            |ui: &mut Ui| {
-                                // Iterate
-                                for i in category_vec() {
-                                    // Get response
-                                    if ui
-                                        .selectable_value(
-                                            &mut self.category,
-                                            i,
-                                            i.to_string()
-                                        )
-                                        .clicked() {
-                                            self.display_search = false;
-                                            self.search = "".to_string();
-                                            self.internal_update();
-                                        }
-                                }
-                            }
+                        // Get current category
+                        let category: RichText = enrich(
+                            &self.api_response.get_category().to_string(),
+                            &TextStyle::Heading,
+                            &self.state.get_text_size()
                         );
+
+                        // Create combo box of category
+                        let mut new_cat: Category = self
+                            .api_response
+                            .get_category(); 
+                        ComboBox::from_label("")
+                            .selected_text(category)
+                            .width(180.)
+                            .show_ui(
+                                ui,
+                                |ui: &mut Ui| {
+                                    // Iterate
+                                    for cat in category_vec() {
+                                        // Get response
+                                        if ui
+                                            .selectable_value(
+                                                &mut new_cat,
+                                                cat,
+                                                cat.to_string()
+                                            )
+                                            .clicked() {
+                                                self
+                                                    .api_response
+                                                    .set_category(new_cat);
+                                            }
+                                    }
+                                }
+                            );
                     }
                 );
 
-            // Now do right side, shifted down and right to bottom
-            ui.with_layout(Layout::right_to_left(Align::Max), |ui| {
-                // Side padding
-                ui.add_space(PADDING);
+                // Now do right side, shifted down and right to bottom
+                ui.with_layout(
+                    Layout::right_to_left(
+                        Align::Max),
+                        |ui: &mut Ui| {
+                            // Side padding
+                            ui.add_space(PADDING);
 
-                // Create settings response
-                let settings_btn: Button<'_> = header_button("🔧");
-                let settings: Response = ui.add(settings_btn);
+                            // Create settings button as menu button
+                            let settings_txt: RichText = enrich(
+                                "🔧",
+                                &TextStyle::StaticButton,
+                                &TextSize::Large);
+                            menu::menu_button(
+                                ui, 
+                                settings_txt, 
+                                |ui: &mut Ui| {
+                                    //Create country button to set display state
+                                    if ui.button("Country").clicked() {
+                                        self.state.toggle_country_menu(true);
+                                    }
 
-                // Handle settings
-                if settings.clicked() && !self.display_settings {
-                    self.display_settings = true;
-                }
+                                    // If display state
+                                    if self.state.is_country_menu() {
+                                        ScrollArea::vertical()
+                                            .max_height(500.0)
+                                            .show(
+                                                ui,
+                                                |ui: &mut Ui| {
+                                                    let mut new_country: Country = self
+                                                        .api_response
+                                                        .get_country();
+                                                    for country in country_vec() {
+                                                        if ui
+                                                            .selectable_value(
+                                                                &mut new_country,
+                                                                country,
+                                                                country.stringify())
+                                                            .clicked() {
+                                                                self.state.toggle_country_menu(false);
+                                                                self.api_response.set_country(country);
+                                                            }
+                                                    }
+                                                }
+                                            );
+                                    }
 
-                // Add buttons if settings clicked
-                if self.display_settings {
-                    // Create country button
-                    let cntry_btn: Button<'_> = header_button("🚩");
-                    let country: Response = ui.add(cntry_btn);
+                                    // Create night mode button
+                                    let night_mode: &str;
+                                    if self.state.is_night_mode() {
+                                        night_mode = "Night Mode: 🌙";
+                                    } else {
+                                        night_mode = "Night Mode: 🌞";
+                                    }
 
-                    // Handle country response
-                    if country.clicked() {
-                        self.display_country = true;
-                    }
+                                    if ui.button(night_mode).clicked() {
+                                        self.state.toggle_night_mode();
+                                    }
 
-                    // Create refresh button
-                    let refresh_btn: Button<'_> = header_button("🔄");
-                    let refresh: Response = ui.add(refresh_btn);
+                                    // Create text size button to set display state
+                                    if ui.button("Text Size").clicked() {
+                                        self.state.toggle_text_size_menu(true);
+                                    }
 
-                    if refresh.clicked() {
-                        self.display_country = false;
-                        self.display_settings = false;
-                        self.internal_update();
-                    }
-                }
-
-                let mut pass: bool = false;
-                let srch_btn: Button<'_> = header_button("🔍");
-                let search: Response = ui.add(srch_btn);
-
-                if self.display_search {
-                    self.search_topic = None;
-                    let srch_box: egui::text_edit::TextEditOutput = TextEdit::singleline(&mut self.search).desired_width(150.).show(ui);
-                    if search.clicked() || (srch_box.response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
-                        if !self.search.is_empty() {
-                            self.category = Category::Search;
-                            self.internal_update();
-                            self.search_topic = Some(self.search.to_string());
-                        }
-
-                        self.display_search = false;
-                        pass = true;
-                    }
-                }
-
-                if search.clicked() && !pass {
-                    self.display_search = true;
-                    self.search = "".to_string();
-                }
-            });
-        });
-
-        
-        if self.display_country {
-            let country_label: RichText = enrich (
-                &self.country.stringify(),
-                &TextStyle::Button,
-                &TextSize::Small
-            );
+                                    if self.state.is_text_size_menu() {
+                                        let mut new_size: TextSize = self.state.get_text_size().to_owned();
+                                        for i in text_size_vec() {
+                                            if ui.selectable_value(
+                                                &mut new_size,
+                                                i,
+                                                i.to_string()
+                                                )
+                                                .clicked() {
+                                                    self.state.toggle_text_size_menu(false);
+                                                    self.state.set_text_size(new_size);
+                                                }
+                                        }
+                                    }
+                                }
+                            );
 
 
-            // TODO: we need new solution. menu_button does what I want, but it doesn't minimize self, or better put, "unclick" itself.
-            
+                            // Create refresh button
+                            let refresh_btn: Button<'_> = header_button("🔄");
+                            let refresh: Response = ui.add(refresh_btn);
 
-            // How about settings button sets a state to add new frame up above or below? 
-            // What if settings button is menu buttton?
-            // Settings button -> night mode as text, country as sub_button/sub_menu, and text_size as sub_button/Sub_menu?
-            // It could be a state: if show, pass state to update to add second menu, else if not show, display separator seen below?
-
-
-            egui::menu::bar(ui, |ui| {
-            egui::menu::menu_button(ui,
-                country_label,
-                |ui: &mut Ui| {
-                    ScrollArea::vertical().show(ui, |ui| {
-                        
-                    for i in country_vec() {
-                        if ui
-                            .selectable_value(
-                                &mut self.country,
-                                i,
-                                i.stringify()
-                            ).clicked() {
-                                self.internal_update();
+                            // Handle refresh call
+                            if refresh.clicked() {
+                                self.api_response.update();
                             }
-                    }
-                    });
-                }
-            );
-            });
-        }
 
+                            // Create search button
+                            let srch_btn: Button<'_> = header_button("🔍");
+                            let search: Response = ui.add(srch_btn);
+
+                            // Handle search call
+                            if search.clicked() {
+                                self.state.toggle_searchbar(true);
+                                self.api_response.set_search("");
+                            }
+
+                            // Handle search bar display
+                            if self.state.is_searchbar() {
+                                // Reset search topic
+                                self.state.set_search_topic(None);
+
+                                // Create new string to read to
+                                let mut new_search: &str = "";
+
+                                // Create search box
+                                let srch_box: TextEditOutput = 
+                                    TextEdit::singleline(
+                                        &mut new_search)
+                                        .desired_width(150.).show(ui);
+
+                                // If search is clicked or enter pressed
+                                if search.clicked()
+                                    || (srch_box.response.lost_focus()
+                                        && ui.input(
+                                            |i: &egui::InputState|
+                                            i.key_pressed(Key::Enter))
+                                        ) {
+                                    // if a new search has been presented
+                                    if !new_search.is_empty() {
+                                        // Set category to Search
+                                        self.api_response.set_category(Category::Search);
+
+                                        // Execute search
+                                        self.api_response.set_search(new_search);
+
+                                        // Set new search as topic
+                                        self.state.set_search_topic(Some(new_search.to_string()));
+                                    }
+                            }
+                            // Else if empty string submitted through box
+                            else if srch_box.response.lost_focus()
+                                && ui.input(
+                                    |i: &egui::InputState|
+                                    i.key_pressed(Key::Enter))
+                                && self.api_response.get_search().is_empty() {
+                                self.state.set_search_topic(None);
+                                self.api_response.set_category(Category::General);
+                            }
+                        }
+                    }
+                );
+            }
+        );
+
+        // Add separator
         ui.add(Separator::default());
 
-        if self.category == Category::Search && self.search_topic.is_some() {
-            let srch: RichText = RichText::new(format!("\nSearching for: {}", self.search_topic.as_ref().unwrap())).font(TextStyle::Search.set_style(&self.text_size));
+        // If the category is search and there is a search topic
+        if self.api_response.get_category() == Category::Search && self.state.is_search_topic() {
+            // Create Search notification
+            let srch: RichText = enrich(
+            &format!("\nSearching for: {}", self.state.get_search_topic()),
+            &TextStyle::Search,
+            &self.state.get_text_size());
             ui.add(Label::new(srch));
-        } else {
-            self.search_topic = None;
         }
     }
 
@@ -603,7 +822,7 @@ impl Interface {
     }
 }
 
-impl App for Interface {
+impl App for Prometheus {
     // Helper to make sure we don't paint anything behind rounded corners
     fn clear_color(&self, _visuals: &Visuals) -> [f32; 4] {
         Rgba::TRANSPARENT.to_array()
@@ -612,10 +831,17 @@ impl App for Interface {
     // Update function
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         // Set font and image loaders at startup
-        if self.startup {
+        if self.state.is_startup() {
             install_image_loaders(ctx);
             self.configure_fonts(ctx);
-            self.startup = false;
+            self.state.toggle_startup();
+        }
+
+        // Enable night mode
+        if self.state.is_night_mode() {
+            ctx.set_visuals(Visuals::dark());
+        } else {
+            ctx.set_visuals(Visuals::light());
         }
 
         // Create custom frame, passing function call for rendering body
@@ -655,7 +881,7 @@ fn main() -> Result<(), eframe::Error> {
         Box::new(
             |_cc: &CreationContext<'_>|
             Box::new(
-                Interface::new()
+                Prometheus::new()
             )
         )
     )
@@ -706,13 +932,12 @@ fn category_vec() -> Vec<Category> {
         Category::General,
         Category::Health,
         Category::Science,
-        Category::Search,
         Category::Sports,
         Category::Technology
     ]
 }
 
-// Helper for generating combo box for country
+// Helper for generating vec for country
 fn country_vec() -> Vec<Country> {
     vec![
         Country::Argentina,
@@ -769,6 +994,15 @@ fn country_vec() -> Vec<Country> {
         Country::UnitedKingdom,
         Country::UnitedStates,
         Country::Venezuela
+    ]
+}
+
+// Helper for generating vector for text size
+fn text_size_vec() -> Vec<TextSize> {
+    vec![
+        TextSize::Small,
+        TextSize::Medium,
+        TextSize::Large
     ]
 }
 
