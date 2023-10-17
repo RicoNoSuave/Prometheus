@@ -47,6 +47,10 @@ use eframe::{
 };
 use egui_extras::install_image_loaders;
 use image::ImageError;
+use serde::{
+    Deserialize,
+    Serialize
+};
 use std::{
     env::var,
     fs::read,
@@ -115,7 +119,8 @@ impl TextStyle {
 }
 
 // State struct
-struct State {
+// #[derive(Serialize, Deserialize)]
+struct RunState {
     article: Option<NewsCard>,
     country_menu: bool,
     night_mode: bool,
@@ -127,7 +132,7 @@ struct State {
 }
 
 // State-changing functions
-impl State {
+impl RunState {
     fn new() -> Self {
         Self {
             article: None,
@@ -141,12 +146,9 @@ impl State {
         }
     }
 
-    fn set_to_default(&mut self) {
-        self.article = None;
+    fn hide_menus(&mut self) {
         self.country_menu = false;
-        self.searchbar = false;
         self.text_size_menu = false;
-        self.search_topic = None;
     }
 
     fn is_article(&self) -> bool {
@@ -165,8 +167,8 @@ impl State {
         self.country_menu
     }
 
-    fn toggle_country_menu(&mut self, on_off: bool) {
-        self.country_menu = on_off;
+    fn toggle_country_menu(&mut self) {
+        self.country_menu = !self.country_menu;
     }
 
     fn is_night_mode(&self) -> bool {
@@ -189,8 +191,8 @@ impl State {
         self.searchbar
     }
 
-    fn toggle_searchbar(&mut self, on_off: bool) {
-        self.searchbar = on_off;
+    fn toggle_searchbar(&mut self) {
+        self.searchbar = !self.searchbar;
     }
 
     fn is_search_topic(&self) -> bool {
@@ -225,8 +227,8 @@ impl State {
         self.text_size_menu
     }
 
-    fn toggle_text_size_menu(&mut self, on_off: bool) {
-        self.text_size_menu = on_off;
+    fn toggle_text_size_menu(&mut self) {
+        self.text_size_menu = !self.text_size_menu;
     }
 }
 
@@ -300,20 +302,31 @@ impl NewsAPI {
         self.news.as_ref().unwrap().to_owned()
     }
 
-    fn get_search(&self) -> String {
-        self.search.to_string()
+    fn get_search(&self) -> &str {
+        &self.search
     }
 
     fn set_search(&mut self, search: &str) {
         self.search = search.to_string();
         self.update();
+        self.category = Category::Search;
     }
+}
+
+// Save state values
+#[derive(Serialize, Deserialize)]
+struct SaveState {
+    night_mode: bool,
+    text_small: bool,
+    text_medium: bool,
+    text_large: bool
 }
 
 // Prometheus structure
 struct Prometheus {
     api_response: NewsAPI,
-    state: State
+    search_string: String,
+    state: RunState
 }
 
 impl Prometheus {
@@ -321,7 +334,8 @@ impl Prometheus {
         // Generate self
         Self {
             api_response: NewsAPI::new(),
-            state: State::new()
+            search_string: "".to_string(),
+            state: RunState::new()
         }
     }
 
@@ -594,29 +608,46 @@ impl Prometheus {
                         let mut new_cat: Category = self
                             .api_response
                             .get_category(); 
-                        ComboBox::from_label("")
-                            .selected_text(category)
-                            .width(180.)
-                            .show_ui(
-                                ui,
-                                |ui: &mut Ui| {
-                                    // Iterate
-                                    for cat in category_vec() {
-                                        // Get response
-                                        if ui
-                                            .selectable_value(
-                                                &mut new_cat,
-                                                cat,
-                                                cat.to_string()
-                                            )
-                                            .clicked() {
-                                                self
-                                                    .api_response
-                                                    .set_category(new_cat);
-                                            }
+                        let cat_box: Response =
+                            ComboBox::from_label("")
+                                .selected_text(category)
+                                .width(180.)
+                                .show_ui(
+                                    ui,
+                                    |ui: &mut Ui| {
+                                        // Iterate
+                                        for cat in category_vec() {
+                                            // Get response
+                                            if ui
+                                                .selectable_value(
+                                                    &mut new_cat,
+                                                    cat,
+                                                    cat.to_string()
+                                                )
+                                                .clicked() {
+                                                    // Clear search for update
+                                                    self.api_response.set_search("");
+
+                                                    // Remove article if any
+                                                    self.state.set_article(None);
+
+                                                    // Hide search bar
+                                                    if self.state.is_searchbar() {
+                                                        self.state.toggle_searchbar();
+                                                    }
+
+                                                    // Submit and update
+                                                    self
+                                                        .api_response
+                                                        .set_category(new_cat);
+                                                }
+                                        }
                                     }
-                                }
-                            );
+                                ).response;
+                        
+                        if cat_box.clicked() {
+                            self.state.hide_menus();
+                        }
                     }
                 );
 
@@ -633,74 +664,98 @@ impl Prometheus {
                                 "🔧",
                                 &TextStyle::StaticButton,
                                 &TextSize::Large);
-                            menu::menu_button(
-                                ui, 
-                                settings_txt, 
-                                |ui: &mut Ui| {
-                                    //Create country button to set display state
-                                    if ui.button("Country").clicked() {
-                                        self.state.toggle_country_menu(true);
-                                    }
+                            let settings_response = menu::menu_button(
+                                    ui, 
+                                    settings_txt, 
+                                    |ui: &mut Ui| {
+                                        //Create country button to set display state
+                                        let country_menu: Response = ui.button("Country");
+                                        if country_menu.clicked() && !self.state.is_country_menu() {
+                                            self.state.toggle_country_menu();
 
-                                    // If display state
-                                    if self.state.is_country_menu() {
-                                        ScrollArea::vertical()
-                                            .max_height(500.0)
-                                            .show(
-                                                ui,
-                                                |ui: &mut Ui| {
-                                                    let mut new_country: Country = self
-                                                        .api_response
-                                                        .get_country();
-                                                    for country in country_vec() {
-                                                        if ui
-                                                            .selectable_value(
-                                                                &mut new_country,
-                                                                country,
-                                                                country.stringify())
-                                                            .clicked() {
-                                                                self.state.toggle_country_menu(false);
-                                                                self.api_response.set_country(country);
-                                                            }
+                                            // If opened, close text menu
+                                            if self.state.is_text_size_menu() {
+                                                self.state.toggle_text_size_menu();
+                                            }
+                                        } else if country_menu.clicked() && self.state.is_country_menu() {
+                                            self.state.toggle_country_menu();
+                                        }
+
+                                        // If display state
+                                        if self.state.is_country_menu() {
+                                            ScrollArea::vertical()
+                                                .max_height(500.0)
+                                                .show(
+                                                    ui,
+                                                    |ui: &mut Ui| {
+                                                        let mut new_country: Country = self
+                                                            .api_response
+                                                            .get_country();
+                                                        for country in country_vec() {
+                                                            if ui
+                                                                .selectable_value(
+                                                                    &mut new_country,
+                                                                    country,
+                                                                    country.stringify())
+                                                                .clicked() {
+                                                                    self.api_response.set_category(Category::General);
+                                                                    self.state.set_article(None);
+                                                                    self.state.toggle_country_menu();
+                                                                    self.api_response.set_country(country);
+                                                                }
+                                                        }
                                                     }
-                                                }
-                                            );
-                                    }
+                                                );
+                                        }
 
-                                    // Create night mode button
-                                    let night_mode: &str;
-                                    if self.state.is_night_mode() {
-                                        night_mode = "Night Mode: 🌙";
-                                    } else {
-                                        night_mode = "Night Mode: 🌞";
-                                    }
+                                        // Create night mode button
+                                        let night_mode: &str;
+                                        if self.state.is_night_mode() {
+                                            night_mode = "Night Mode: 🌙";
+                                        } else {
+                                            night_mode = "Night Mode: 🌞";
+                                        }
 
-                                    if ui.button(night_mode).clicked() {
-                                        self.state.toggle_night_mode();
-                                    }
+                                        if ui.button(night_mode).clicked() {
+                                            self.state.toggle_night_mode();
 
-                                    // Create text size button to set display state
-                                    if ui.button("Text Size").clicked() {
-                                        self.state.toggle_text_size_menu(true);
-                                    }
+                                            // Close other menus
+                                            self.state.hide_menus();
+                                        }
 
-                                    if self.state.is_text_size_menu() {
-                                        let mut new_size: TextSize = self.state.get_text_size().to_owned();
-                                        for i in text_size_vec() {
-                                            if ui.selectable_value(
-                                                &mut new_size,
-                                                i,
-                                                i.to_string()
-                                                )
-                                                .clicked() {
-                                                    self.state.toggle_text_size_menu(false);
-                                                    self.state.set_text_size(new_size);
-                                                }
+                                        // Create text size button to set display state
+                                        let text_menu: Response = ui.button("Text Size");
+                                        if text_menu.clicked() && !self.state.is_text_size_menu() {
+                                            self.state.toggle_text_size_menu();
+
+                                            // If country menu is open, close it
+                                            if self.state.is_country_menu() {
+                                                self.state.toggle_country_menu();
+                                            }
+                                        } else if text_menu.clicked() && self.state.is_text_size_menu() {
+                                            self.state.toggle_text_size_menu();
+                                        }
+
+                                        if self.state.is_text_size_menu() {
+                                            let mut new_size: TextSize = self.state.get_text_size().to_owned();
+                                            for i in text_size_vec() {
+                                                if ui.selectable_value(
+                                                    &mut new_size,
+                                                    i,
+                                                    i.to_string()
+                                                    )
+                                                    .clicked() {
+                                                        self.state.toggle_text_size_menu();
+                                                        self.state.set_text_size(new_size);
+                                                    }
+                                            }
                                         }
                                     }
-                                }
-                            );
+                                ).response;
 
+                            if settings_response.clicked() && self.state.is_searchbar() {
+                                self.state.toggle_searchbar();
+                            }
 
                             // Create refresh button
                             let refresh_btn: Button<'_> = header_button("🔄");
@@ -709,6 +764,12 @@ impl Prometheus {
                             // Handle refresh call
                             if refresh.clicked() {
                                 self.api_response.update();
+
+                                self.state.hide_menus();
+                                self.state.set_article(None);
+                                if self.state.is_searchbar() {
+                                    self.state.toggle_searchbar();
+                                }
                             }
 
                             // Create search button
@@ -716,53 +777,61 @@ impl Prometheus {
                             let search: Response = ui.add(srch_btn);
 
                             // Handle search call
-                            if search.clicked() {
-                                self.state.toggle_searchbar(true);
-                                self.api_response.set_search("");
+                            // If clicked while off, turn on, else if clicked while on, turn off.
+                            if search.clicked() && !self.state.is_searchbar() {
+                                self.state.toggle_searchbar();
+                                self.state.hide_menus();
+                            } else if search.clicked() && self.state.is_searchbar() {
+                                self.state.toggle_searchbar();
+                                self.state.hide_menus();
                             }
 
                             // Handle search bar display
                             if self.state.is_searchbar() {
-                                // Reset search topic
-                                self.state.set_search_topic(None);
-
-                                // Create new string to read to
-                                let mut new_search: &str = "";
-
                                 // Create search box
                                 let srch_box: TextEditOutput = 
                                     TextEdit::singleline(
-                                        &mut new_search)
+                                        &mut self.search_string)
                                         .desired_width(150.).show(ui);
 
                                 // If search is clicked or enter pressed
-                                if search.clicked()
+                                if (
+                                    search.clicked()
                                     || (srch_box.response.lost_focus()
                                         && ui.input(
                                             |i: &egui::InputState|
                                             i.key_pressed(Key::Enter))
-                                        ) {
-                                    // if a new search has been presented
-                                    if !new_search.is_empty() {
-                                        // Set category to Search
-                                        self.api_response.set_category(Category::Search);
+                                        )
+                                    ) && !self.search_string.is_empty() {
+                                    // Remove article if any
+                                    self.state.set_article(None);
 
-                                        // Execute search
-                                        self.api_response.set_search(new_search);
+                                    // Set category to search
+                                    self.api_response.set_category(Category::Search);
 
-                                        // Set new search as topic
-                                        self.state.set_search_topic(Some(new_search.to_string()));
-                                    }
-                            }
-                            // Else if empty string submitted through box
-                            else if srch_box.response.lost_focus()
-                                && ui.input(
-                                    |i: &egui::InputState|
-                                    i.key_pressed(Key::Enter))
-                                && self.api_response.get_search().is_empty() {
-                                self.state.set_search_topic(None);
-                                self.api_response.set_category(Category::General);
-                            }
+                                    // Execute search
+                                    self.api_response.set_search(&self.search_string);
+
+                                    // Set new search as topic
+                                    self.state.set_search_topic(Some(self.search_string.to_owned()));
+
+                                    // Clear search string
+                                    self.search_string = "".to_string();
+
+                                    // toggle search bar
+                                    self.state.toggle_searchbar();
+                                }
+
+                                // If empty string submitted through box
+                                if srch_box.response.lost_focus()
+                                    && ui.input(
+                                        |i: &egui::InputState|
+                                        i.key_pressed(Key::Enter))
+                                    && self.search_string.is_empty()
+                                    && self.api_response.get_search().is_empty() {
+                                    self.state.toggle_searchbar();
+                                    self.api_response.set_category(Category::General);
+                                }
                         }
                     }
                 );
