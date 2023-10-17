@@ -73,7 +73,8 @@ const PADDING: f32 = 5.0;
 enum TextSize {
     Large,
     Medium,
-    Small
+    Small,
+    XLarge
 }
 
 // String for menu
@@ -82,7 +83,8 @@ impl ToString for TextSize {
         match self {
             TextSize::Large => "Large".to_string(),
             TextSize::Medium => "Medium".to_string(),
-            TextSize::Small => "Small".to_string()
+            TextSize::Small => "Small".to_string(),
+            TextSize::XLarge => "Extra Large".to_string()
         }
     }
 }
@@ -104,7 +106,8 @@ impl TextStyle {
         match size {
             TextSize::Large => modifier = 4.0,
             TextSize::Medium => modifier = 2.0,
-            TextSize::Small => modifier = 0.0
+            TextSize::Small => modifier = 0.0,
+            TextSize::XLarge => modifier = 6.0
         };
 
 		match self {
@@ -664,7 +667,7 @@ impl Prometheus {
                                 "🔧",
                                 &TextStyle::StaticButton,
                                 &TextSize::Large);
-                            let settings_response = menu::menu_button(
+                            let settings_response: Response = menu::menu_button(
                                     ui, 
                                     settings_txt, 
                                     |ui: &mut Ui| {
@@ -708,21 +711,6 @@ impl Prometheus {
                                                 );
                                         }
 
-                                        // Create night mode button
-                                        let night_mode: &str;
-                                        if self.state.is_night_mode() {
-                                            night_mode = "Night Mode: 🌙";
-                                        } else {
-                                            night_mode = "Night Mode: 🌞";
-                                        }
-
-                                        if ui.button(night_mode).clicked() {
-                                            self.state.toggle_night_mode();
-
-                                            // Close other menus
-                                            self.state.hide_menus();
-                                        }
-
                                         // Create text size button to set display state
                                         let text_menu: Response = ui.button("Text Size");
                                         if text_menu.clicked() && !self.state.is_text_size_menu() {
@@ -755,6 +743,32 @@ impl Prometheus {
 
                             if settings_response.clicked() && self.state.is_searchbar() {
                                 self.state.toggle_searchbar();
+                            }
+
+                            // Create night mode button
+                            let night_mode: RichText;
+                            if self.state.is_night_mode() {
+                                night_mode = enrich(
+                                    "🌙",
+                                    &TextStyle::StaticButton,
+                                    &TextSize::Large
+                                );
+                            } else {
+                                night_mode = enrich(
+                                    "🌞",
+                                    &TextStyle::StaticButton,
+                                    &TextSize::Large
+                                );
+                            }
+
+                            let nmode_btn: Response = ui.add(
+                                Button::new(night_mode));
+
+                            if nmode_btn.clicked() {
+                                self.state.toggle_night_mode();
+
+                                // Close other menus
+                                self.state.hide_menus();
                             }
 
                             // Create refresh button
@@ -830,7 +844,6 @@ impl Prometheus {
                                     && self.search_string.is_empty()
                                     && self.api_response.get_search().is_empty() {
                                     self.state.toggle_searchbar();
-                                    self.api_response.set_category(Category::General);
                                 }
                         }
                     }
@@ -1016,22 +1029,17 @@ fn country_vec() -> Vec<Country> {
         Country::Brazil,
         Country::Bulgaria,
         Country::Canada,
-        Country::China,
         Country::Colombia,
         Country::Cuba,
         Country::Czechia,
-        Country::Egypt,
         Country::France,
         Country::Germany,
         Country::Greece,
-        Country::HongKong,
         Country::Hungary,
         Country::India,
         Country::Indonesia,
         Country::Ireland,
-        Country::Israel,
         Country::Italy,
-        Country::Japan,
         Country::Latvia,
         Country::Lithuania,
         Country::Malaysia,
@@ -1052,14 +1060,10 @@ fn country_vec() -> Vec<Country> {
         Country::Slovakia,
         Country::Slovenia,
         Country::SouthAfrica,
-        Country::SouthKorea,
         Country::Sweden,
         Country::Switzerland,
-        Country::Taiwan,
-        Country::Thailand,
         Country::Turkey,
         Country::Ukraine,
-        Country::UnitedArabEmirates,
         Country::UnitedKingdom,
         Country::UnitedStates,
         Country::Venezuela
@@ -1071,7 +1075,8 @@ fn text_size_vec() -> Vec<TextSize> {
     vec![
         TextSize::Small,
         TextSize::Medium,
-        TextSize::Large
+        TextSize::Large,
+        TextSize::XLarge
     ]
 }
 
