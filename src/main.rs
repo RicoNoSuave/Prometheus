@@ -1,4 +1,4 @@
-use dotenv::dotenv;
+#![windows_subsystem = "windows"]
 use eframe::{
     App,
     CreationContext,
@@ -33,11 +33,10 @@ use eframe::{
         Separator,
         TextEdit,
         text_edit::TextEditOutput,
-        TopBottomPanel,
         Ui,
         Vec2,
         vec2,
-        Visuals
+        Visuals, Window
     },
     epaint::{Rgba, Rect},
     Frame,
@@ -52,7 +51,6 @@ use serde::{
     Serialize
 };
 use std::{
-    env::var,
     fs::read,
     io::Error,
     path::Path
@@ -136,15 +134,27 @@ struct RunState {
 
 // State-changing functions
 impl RunState {
-    fn new() -> Self {
+    fn new(save_state: &SaveState) -> Self {
+
+        // TODO: Grab savestate values then convert
         Self {
             article: None,
             country_menu: false,
-            night_mode: false,
+            night_mode: save_state.night_mode,
             searchbar: false,
             search_topic: None,
             startup: true,
-            text_size: TextSize::Small,
+            text_size: {
+                if save_state.text_x_large {
+                    TextSize::XLarge
+                } else if save_state.text_large {
+                    TextSize::Large
+                } else if save_state.text_medium {
+                    TextSize::Medium
+                } else {
+                    TextSize::Small
+                }
+            },
             text_size_menu: false
         }
     }
@@ -237,6 +247,7 @@ impl RunState {
 
 // NewsAPI struct
 struct NewsAPI {
+    api_key: String,
     category: Category,
     country: Country,
     news: Result<Vec<NewsCard>, NewsAPIError>,
@@ -245,15 +256,12 @@ struct NewsAPI {
 
 // NewsAPI functions
 impl NewsAPI {
-    fn new() -> Self {
-        // Get api key
-        dotenv().unwrap();
-        let api_key: String = var("API_KEY").unwrap();
-
+    fn new(country: &String, api_key: String) -> Self {
         // Create new self
         Self {
+            api_key: api_key.to_string(),
             category: Category::General,
-            country: Country::UnitedStates,
+            country: Country::from_str(country),
             news: NewsAPIResponse::new(
                 api_key,
                 &Category::General,
@@ -265,16 +273,24 @@ impl NewsAPI {
     }
 
     fn update(&mut self) {
-        // Get api key
-        dotenv().unwrap();
-        let api_key: String = var("API_KEY").unwrap();
-
         self.news = NewsAPIResponse::new(
-            api_key,
+            self.api_key.to_string(),
             &self.category,
             &self.country,
             &self.search
         )
+    }
+
+    fn test(&self, api_key: String) -> bool {
+        match NewsAPIResponse::new(
+            api_key,
+            &self.category,
+            &self.country,
+            &self.search
+        ) {
+            Ok(_) => true,
+            Err(_) => false
+        }
     }
 
     fn get_category(&self) -> Category {
@@ -319,26 +335,81 @@ impl NewsAPI {
 // Save state values
 #[derive(Serialize, Deserialize)]
 struct SaveState {
+    api_key: String,
+    country: String,
     night_mode: bool,
     text_small: bool,
     text_medium: bool,
-    text_large: bool
+    text_large: bool,
+    text_x_large: bool
+}
+
+impl SaveState {
+    fn new () -> Self {
+        let config: SaveState =
+            confy::load(
+                    "prometheus",
+                    "prom_config")
+                .unwrap_or_default();
+        config
+    }
+
+    fn save(&mut self, country: Country, night_mode: bool, text_size: &TextSize) {
+        self.country = country.to_string();
+        self.night_mode = night_mode;
+        self.text_large = false;
+        self.text_medium = false;
+        self.text_small = false;
+        self.text_x_large = false;
+        match text_size {
+            TextSize::Small => self.text_small = true,
+            TextSize::Medium => self.text_medium = true,
+            TextSize::Large => self.text_large = true,
+            TextSize::XLarge => self.text_x_large = true
+        }
+        let save: Result<(), confy::ConfyError> =
+            confy::store(
+                "prometheus",
+                "prom_config",
+                self);
+        match save {
+            Ok(_) => (),
+            Err(e) => println!("{:?}", e)
+        };
+    }
+}
+
+impl Default for SaveState {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            country: "us".to_string(),
+            night_mode: false,
+            text_small: true,
+            text_medium: false,
+            text_large: false,
+            text_x_large: false
+        }
+    }
 }
 
 // Prometheus structure
 struct Prometheus {
     api_response: NewsAPI,
+    save_state: SaveState,
     search_string: String,
     state: RunState
 }
 
 impl Prometheus {
     fn new() -> Self {
-        // Generate self
+        let save_state: SaveState = SaveState::new();
+
         Self {
-            api_response: NewsAPI::new(),
+            api_response: NewsAPI::new(&save_state.country, save_state.api_key.to_string()),
+            state: RunState::new(&save_state),
+            save_state: save_state,
             search_string: "".to_string(),
-            state: RunState::new()
         }
     }
 
@@ -662,89 +733,6 @@ impl Prometheus {
                             // Side padding
                             ui.add_space(PADDING);
 
-                            // Create settings button as menu button
-                            let settings_txt: RichText = enrich(
-                                "🔧",
-                                &TextStyle::StaticButton,
-                                &TextSize::Large);
-                            let settings_response: Response = menu::menu_button(
-                                    ui, 
-                                    settings_txt, 
-                                    |ui: &mut Ui| {
-                                        //Create country button to set display state
-                                        let country_menu: Response = ui.button("Country");
-                                        if country_menu.clicked() && !self.state.is_country_menu() {
-                                            self.state.toggle_country_menu();
-
-                                            // If opened, close text menu
-                                            if self.state.is_text_size_menu() {
-                                                self.state.toggle_text_size_menu();
-                                            }
-                                        } else if country_menu.clicked() && self.state.is_country_menu() {
-                                            self.state.toggle_country_menu();
-                                        }
-
-                                        // If display state
-                                        if self.state.is_country_menu() {
-                                            ScrollArea::vertical()
-                                                .max_height(500.0)
-                                                .show(
-                                                    ui,
-                                                    |ui: &mut Ui| {
-                                                        let mut new_country: Country = self
-                                                            .api_response
-                                                            .get_country();
-                                                        for country in country_vec() {
-                                                            if ui
-                                                                .selectable_value(
-                                                                    &mut new_country,
-                                                                    country,
-                                                                    country.stringify())
-                                                                .clicked() {
-                                                                    self.api_response.set_category(Category::General);
-                                                                    self.state.set_article(None);
-                                                                    self.state.toggle_country_menu();
-                                                                    self.api_response.set_country(country);
-                                                                }
-                                                        }
-                                                    }
-                                                );
-                                        }
-
-                                        // Create text size button to set display state
-                                        let text_menu: Response = ui.button("Text Size");
-                                        if text_menu.clicked() && !self.state.is_text_size_menu() {
-                                            self.state.toggle_text_size_menu();
-
-                                            // If country menu is open, close it
-                                            if self.state.is_country_menu() {
-                                                self.state.toggle_country_menu();
-                                            }
-                                        } else if text_menu.clicked() && self.state.is_text_size_menu() {
-                                            self.state.toggle_text_size_menu();
-                                        }
-
-                                        if self.state.is_text_size_menu() {
-                                            let mut new_size: TextSize = self.state.get_text_size().to_owned();
-                                            for i in text_size_vec() {
-                                                if ui.selectable_value(
-                                                    &mut new_size,
-                                                    i,
-                                                    i.to_string()
-                                                    )
-                                                    .clicked() {
-                                                        self.state.toggle_text_size_menu();
-                                                        self.state.set_text_size(new_size);
-                                                    }
-                                            }
-                                        }
-                                    }
-                                ).response;
-
-                            if settings_response.clicked() && self.state.is_searchbar() {
-                                self.state.toggle_searchbar();
-                            }
-
                             // Create night mode button
                             let night_mode: RichText;
                             if self.state.is_night_mode() {
@@ -858,49 +846,344 @@ impl Prometheus {
         if self.api_response.get_category() == Category::Search && self.state.is_search_topic() {
             // Create Search notification
             let srch: RichText = enrich(
-            &format!("\nSearching for: {}", self.state.get_search_topic()),
+            &format!("Searching for: {}", self.state.get_search_topic()),
             &TextStyle::Search,
             &self.state.get_text_size());
             ui.add(Label::new(srch));
         }
     }
 
-    // Footer function
-    fn render_footer(&self, ui: &mut Ui) {
-        ui.vertical_centered(
-            |ui| {
-                // Add padding
-                ui.add_space(PADDING);
+    fn settings_button(&mut self, ui: &mut Ui) {
+        // Create settings button as menu button
+        let settings_txt: RichText = enrich(
+            "🔧",
+            &TextStyle::Button,
+            &TextSize::Large);
+        let settings_response: Response = menu::menu_button(
+                ui, 
+                settings_txt, 
+                |ui: &mut Ui| {
+                    //Create country button to set display state
+                    let country_menu: Response = ui.button("Country");
+                    if country_menu.clicked() && !self.state.is_country_menu() {
+                        self.state.toggle_country_menu();
 
-                // Create text
-                let api_src_txt: RichText = enrich(
-                    "API Source: https://newsapi.org/",
-                    &TextStyle::Button,
-                    &TextSize::Small
-                );
-                let my_txt: RichText = enrich(
-                    "Check out more of my work at https://github.com/RicoNoSuave",
-                    &TextStyle::Button,
-                    &TextSize::Small
-                );
-                let egui_txt: RichText = enrich("Built with egui",
-                    &TextStyle::Button,
-                    &TextSize::Small
-                );
+                        // If opened, close text menu
+                        if self.state.is_text_size_menu() {
+                            self.state.toggle_text_size_menu();
+                        }
+                    } else if country_menu.clicked() && self.state.is_country_menu() {
+                        self.state.toggle_country_menu();
+                    }
 
+                    // If display state
+                    if self.state.is_country_menu() {
+                        ScrollArea::vertical()
+                            .max_height(500.0)
+                            .show(
+                                ui,
+                                |ui: &mut Ui| {
+                                    let mut new_country: Country = self
+                                        .api_response
+                                        .get_country();
+                                    for country in country_vec() {
+                                        if ui
+                                            .selectable_value(
+                                                &mut new_country,
+                                                country,
+                                                country.stringify())
+                                            .clicked() {
+                                                self.api_response.set_category(Category::General);
+                                                self.state.set_article(None);
+                                                self.state.toggle_country_menu();
+                                                self.api_response.set_country(country);
+                                            }
+                                    }
+                                }
+                            );
+                    }
 
-                // Set URL color to regular text
-                ui.style_mut().visuals.hyperlink_color = ui
-                    .style_mut()
-                    .visuals
-                    .text_color();
+                    // Create text size button to set display state
+                    let text_menu: Response = ui.button("Text Size");
+                    if text_menu.clicked() && !self.state.is_text_size_menu() {
+                        self.state.toggle_text_size_menu();
 
-                // Add text
-                ui.add(Label::new(api_src_txt));
-                ui.hyperlink_to(my_txt, "https://github.com/RicoNoSuave");
-                ui.hyperlink_to(egui_txt, "https://github.com/emilk/egui");
+                        // If country menu is open, close it
+                        if self.state.is_country_menu() {
+                            self.state.toggle_country_menu();
+                        }
+                    } else if text_menu.clicked() && self.state.is_text_size_menu() {
+                        self.state.toggle_text_size_menu();
+                    }
+
+                    if self.state.is_text_size_menu() {
+                        let mut new_size: TextSize = self.state.get_text_size().to_owned();
+                        for i in text_size_vec() {
+                            if ui.selectable_value(
+                                &mut new_size,
+                                i,
+                                i.to_string()
+                                )
+                                .clicked() {
+                                    self.state.toggle_text_size_menu();
+                                    self.state.set_text_size(new_size);
+                                }
+                        }
+                    }
+
+                    // Add About hyperlink set to text color
+                    ui.style_mut().visuals.hyperlink_color = ui
+                        .style_mut()
+                        .visuals
+                        .text_color();
+
+                    ui.add(Hyperlink::from_label_and_url("About", "www.prometheusnews.com"));
+                }
+            ).response;
+
+        if settings_response.clicked() && self.state.is_searchbar() {
+            self.state.toggle_searchbar();
+        }
+    }
+
+    // Custom Frame generator
+    fn custom_window_frame(&mut self, ctx: &Context, frame: &mut Frame) {
+        // Create frame
+        let panel_frame: egui::Frame = egui::Frame {
+            fill: ctx.style().visuals.window_fill(),
+            rounding: 5.0.into(),
+            stroke: ctx.style().visuals.widgets.noninteractive.fg_stroke,
+            outer_margin: 0.5.into(),
+            ..Default::default()
+        };
+
+        self.central_panel(ctx, frame, panel_frame);
+    }
+
+    fn central_panel(&mut self, ctx: &Context, frame:&mut Frame, panel_frame: egui::Frame) {
+        CentralPanel::default().frame(panel_frame).show(ctx,
+            |ui: &mut Ui| {
+                // Get native max rectangle size
+                let app_rect: Rect = ui.max_rect();
+    
+                // Create title bar rectangle that fills with height
+                let title_bar_height: f32 = 28.0;
+                let title_bar_rect: Rect = {
+                    let mut rect: Rect = app_rect;
+                    rect.max.y = rect.min.y + title_bar_height;
+                    rect
+                };
+    
+                // Generate title bar into frame
+                self.title_bar_ui(ui, frame, title_bar_rect);
+    
+                // Create content rectangle within frame (shrunk to make outline)
+                let content_rect: Rect = {
+                    let mut rect: Rect = app_rect;
+                    rect.min.y = title_bar_rect.max.y;
+                    rect
+                }
+                .shrink(4.0);
+    
+                // Create child ui to handle body
+                let mut content_ui: Ui = ui
+                    .child_ui(content_rect, *ui.layout());
+
+                
+
+                // If api key is not set, get, else
+                if self.api_response.api_key.is_empty() {
+                    self.render_key(ctx);
+                } else {
+                    // pass child ui back to update
+                    self.add_body(&mut content_ui);
+                }
+
             }
         );
+    }
+
+    fn add_body(&mut self, ui: &mut Ui) {
+        // Render header
+        self.render_header(ui);
+
+        // Render news area
+        ScrollArea::vertical()
+            .show(ui, 
+                |ui: &mut Ui| {
+                    self.render_ui(ui);
+                }
+            );
+    }
+
+    // Create and load title bar
+    fn title_bar_ui(&mut self, ui: &mut Ui, frame: &mut Frame, title_bar_rect: Rect) {
+        // Get native ui paint color
+        let painter: &Painter = ui.painter();
+    
+        // Create title bar response object
+        let title_bar_response: Response = ui
+            .interact(title_bar_rect, Id::new("title_bar"), Sense::click());
+    
+        // Apply paint color to title rect
+        painter.text(
+            title_bar_rect.center(),
+            Align2::CENTER_CENTER,
+            "",
+            FontId::proportional(20.),
+            ui.style().visuals.text_color()
+        );
+    
+        // Add line under title bar separating from body
+        painter.line_segment(
+            [
+                title_bar_rect.left_bottom() + vec2(1.0, 0.0),
+                title_bar_rect.right_bottom() + vec2(-1.0, 0.0),
+            ],
+            ui.visuals().widgets.noninteractive.bg_stroke,
+        );
+    
+        // Track title bar responses
+        if title_bar_response.double_clicked() {
+            frame.set_maximized(!frame.info().window_info.maximized);
+        } else if title_bar_response.is_pointer_button_down_on() {
+            frame.drag_window();
+        }
+    
+        // Load objects into title bar
+        ui.allocate_ui_at_rect(
+            title_bar_rect,
+             |ui: &mut Ui| {
+                // Add vertical padding
+                ui.add_space(PADDING);
+    
+                // Add menu bar for same row
+                egui::menu::bar(ui,
+                    |ui: &mut Ui| {
+                        // Generate left side first
+                        ui.with_layout(
+                            Layout::left_to_right(Align::Center),
+                            |ui: &mut Ui| {
+                                // Create logo object
+                                let logo: Image<'_> = Image::new(
+                                    include_image!(
+                                        "../logo/prometheus_logo.png"
+                                    )
+                                );
+    
+                                // Add padding to left for square
+                                ui.add_space(PADDING);
+    
+                                // Add logo
+                                ui.add(logo);
+
+                                // Add settings button
+                                self.settings_button(ui);
+                            }
+                        );
+    
+                        // Generate right side
+                        ui.with_layout(
+                            Layout::right_to_left(Align::Center),
+                            |ui: &mut Ui| {
+                                // Add spacing between objects
+                                ui.spacing_mut().item_spacing.x = 10.0;
+    
+                                // Hide frames around objects
+                                ui.visuals_mut().button_frame = false;
+    
+                                // Move in from right side for square
+                                ui.add_space(PADDING);
+    
+                                // Call helper function to load
+                                self.close_maximize_minimize(ui, frame);
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    }
+
+    fn close_maximize_minimize (&mut self, ui: &mut Ui, frame: &mut Frame) {
+        // Create objects
+        let close_btn: Button<'_> = frame_button("❌");
+        let max_btn: Button<'_> = frame_button("🗗");
+        let min_btn: Button<'_> = frame_button("🗕");
+    
+        // Load close button
+        let close: Response = ui.add(close_btn)
+            .on_hover_text("Close");
+    
+        // Handle close button response
+        if close.clicked() {
+            self.save_state.save(
+                self.api_response.get_country(),
+                self.state.is_night_mode(),
+                self.state.get_text_size()
+            );
+            frame.close();
+        }
+    
+        // Split maximize button response based on current frame size
+        // If maximized, normalize, else maximize
+        if frame.info().window_info.maximized {
+            // Load maximize button
+            let maximize: Response = ui.add(max_btn)
+                .on_hover_text("Restore");
+    
+            // Handle maximize button response
+            if maximize.clicked() {
+                frame.set_maximized(false);
+            }
+        } else {
+            // Load maximize button
+            let maximize: Response = ui.add(max_btn)
+                .on_hover_text("Maximize");
+    
+            // Handle maximize button response
+            if maximize.clicked() {
+                frame.set_maximized(true);
+            }
+        }
+    
+        // Load minimize button
+        let minimize: Response = ui.add(min_btn)
+            .on_hover_text("Minimize");
+    
+        // Handle minimize response
+        if minimize.clicked() {
+            frame.set_minimized(true);
+        }
+    }
+
+    fn render_key(&mut self, ctx: &Context) {
+        Window::new("Configuration")
+            .show(ctx, |ui: &mut Ui| {
+                ui.label("Please enter an API-Key from www.newsapi.org");
+                let text_input: Response = ui.text_edit_singleline(&mut self.save_state.api_key);
+
+                if text_input.lost_focus()
+                    && ui.input(
+                        |i: &egui::InputState|
+                                    i.key_pressed(Key::Enter)
+                                )
+                    {
+                    self.save_state.save(
+                        self.api_response.get_country(),
+                        self.state.is_night_mode(),
+                        self.state.get_text_size()
+                    );
+
+                    if self.api_response.test(self.save_state.api_key.to_string()) {
+                        self.api_response.api_key = self.save_state.api_key.to_string();
+                    }
+
+                    self.api_response.update();
+                }
+                ui.label("If you do not have an API-Key, please visit");
+                ui.hyperlink("https://newsapi.org");
+            });
     }
 }
 
@@ -927,28 +1210,7 @@ impl App for Prometheus {
         }
 
         // Create custom frame, passing function call for rendering body
-        custom_window_frame(ctx, frame, 
-            |ui: &mut Ui| {
-                // Render header
-                self.render_header(ui);
-
-                // Render news area
-                ScrollArea::vertical()
-                    .show(ui, 
-                        |ui: &mut Ui| {
-                            self.render_ui(ui);
-                        }
-                    );
-
-                // Render footer
-                TopBottomPanel::bottom("footer")
-                    .show(ctx,
-                        |ui: &mut Ui| {
-                            self.render_footer(ui);
-                    }
-                );
-            }
-        );
+        self.custom_window_frame(ctx, frame);
     }
 }
 
@@ -986,7 +1248,7 @@ fn settings() -> NativeOptions {
     NativeOptions {
         decorated: false,
         icon_data: icon,
-        initial_window_size: Some(Vec2::new(540., 960.)),
+        initial_window_size: Some(Vec2::new(450.0, 750.0)),
         transparent: true,
         ..Default::default()
     }
@@ -1088,183 +1350,4 @@ fn frame_button(string: &str) -> Button {
             &TextStyle::Button,
             &TextSize::Large)
         )
-}
-
-// Custom Frame generator
-fn custom_window_frame(ctx: &Context, frame: &mut Frame, add_body: impl FnOnce(&mut Ui)) {
-    // Create frame
-    let panel_frame: egui::Frame = egui::Frame {
-        fill: ctx.style().visuals.window_fill(),
-        rounding: 5.0.into(),
-        stroke: ctx.style().visuals.widgets.noninteractive.fg_stroke,
-        outer_margin: 0.5.into(),
-        ..Default::default()
-    };
-
-    // Create ;entral panel in frame
-    CentralPanel::default().frame(panel_frame).show(ctx,
-        |ui: &mut Ui| {
-            // Get native max rectangle size
-            let app_rect: Rect = ui.max_rect();
-
-            // Create title bar rectangle that fills with height
-            let title_bar_height: f32 = 28.0;
-            let title_bar_rect: Rect = {
-                let mut rect: Rect = app_rect;
-                rect.max.y = rect.min.y + title_bar_height;
-                rect
-            };
-
-            // Generate title bar into frame
-            title_bar_ui(ui, frame, title_bar_rect);
-
-            // Create content rectangle within frame (shrunk to make outline)
-            let content_rect: Rect = {
-                let mut rect: Rect = app_rect;
-                rect.min.y = title_bar_rect.max.y;
-                rect
-            }
-            .shrink(4.0);
-
-            // Create child ui to handle body
-            let mut content_ui: Ui = ui
-                .child_ui(content_rect, *ui.layout());
-
-            // pass child ui back to update
-            add_body(&mut content_ui);
-        }
-    );
-}
-
-// Create and load title bar
-fn title_bar_ui( ui: &mut Ui, frame: &mut Frame, title_bar_rect: Rect) {
-    // Get native ui paint color
-    let painter: &Painter = ui.painter();
-
-    // Create title bar response object
-    let title_bar_response: Response = ui
-        .interact(title_bar_rect, Id::new("title_bar"), Sense::click());
-
-    // Apply paint color to title rect
-    painter.text(
-        title_bar_rect.center(),
-        Align2::CENTER_CENTER,
-        "",
-        FontId::proportional(20.),
-        ui.style().visuals.text_color()
-    );
-
-    // Add line under title bar separating from body
-    painter.line_segment(
-        [
-            title_bar_rect.left_bottom() + vec2(1.0, 0.0),
-            title_bar_rect.right_bottom() + vec2(-1.0, 0.0),
-        ],
-        ui.visuals().widgets.noninteractive.bg_stroke,
-    );
-
-    // Track title bar responses
-    if title_bar_response.double_clicked() {
-        frame.set_maximized(!frame.info().window_info.maximized);
-    } else if title_bar_response.is_pointer_button_down_on() {
-        frame.drag_window();
-    }
-
-    // Load objects into title bar
-    ui.allocate_ui_at_rect(
-        title_bar_rect,
-         |ui: &mut Ui| {
-            // Add vertical padding
-            ui.add_space(PADDING);
-
-            // Add menu bar for same row
-            egui::menu::bar(ui,
-                |ui: &mut Ui| {
-                    // Generate left side first
-                    ui.with_layout(
-                        Layout::left_to_right(Align::Center),
-                        |ui: &mut Ui| {
-                            // Create logo object
-                            let logo: Image<'_> = Image::new(
-                                include_image!(
-                                    "../logo/prometheus_logo.png"
-                                )
-                            );
-
-                            // Add padding to left for square
-                            ui.add_space(PADDING);
-
-                            // Add logo
-                            ui.add(logo);
-                        }
-                    );
-
-                    // Generate right side
-                    ui.with_layout(
-                        Layout::right_to_left(Align::Center),
-                        |ui: &mut Ui| {
-                            // Add spacing between objects
-                            ui.spacing_mut().item_spacing.x = 10.0;
-
-                            // Hide frames around objects
-                            ui.visuals_mut().button_frame = false;
-
-                            // Move in from right side for square
-                            ui.add_space(PADDING);
-
-                            // Call helper function to load
-                            close_maximize_minimize(ui, frame);
-                        }
-                    );
-                }
-            );
-        }
-    );
-}
-
-fn close_maximize_minimize (ui: &mut Ui, frame: &mut Frame) {
-    // Create objects
-    let close_btn: Button<'_> = frame_button("❌");
-    let max_btn = frame_button("🗗");
-    let min_btn: Button<'_> = frame_button("🗕");
-
-    // Load close button
-    let close: Response = ui.add(close_btn)
-        .on_hover_text("Close");
-
-    // Handle close button response
-    if close.clicked() {
-        frame.close();
-    }
-
-    // Split maximize button response based on current frame size
-    // If maximized, normalize, else maximize
-    if frame.info().window_info.maximized {
-        // Load maximize button
-        let maximize: Response = ui.add(max_btn)
-            .on_hover_text("Restore");
-
-        // Handle maximize button response
-        if maximize.clicked() {
-            frame.set_maximized(false);
-        }
-    } else {
-        // Load maximize button
-        let maximize: Response = ui.add(max_btn)
-            .on_hover_text("Maximize");
-
-        // Handle maximize button response
-        if maximize.clicked() {
-            frame.set_maximized(true);
-        }
-    }
-
-    // Load minimize button
-    let minimize: Response = ui.add(min_btn)
-        .on_hover_text("Minimize");
-
-    // Handle minimize response
-    if minimize.clicked() {
-        frame.set_minimized(true);
-    }
 }

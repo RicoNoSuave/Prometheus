@@ -14,3 +14,6 @@ egui_extras = { version = "0.23.0", features = ["all_loaders"] }
 image =  { version = "0.24.7", features = ["png"] }
 newsapi = { path = "./newsapi" }
 serde = { version = "1.0.189", features = ["derive"] }
+
+[build-dependencies]
+winres = "0.1.12"
