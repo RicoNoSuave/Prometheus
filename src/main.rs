@@ -347,9 +347,7 @@ struct SaveState {
 impl SaveState {
     fn new () -> Self {
         let config: SaveState =
-            confy::load(
-                    "prometheus",
-                    "prom_config")
+            confy::load_path("./settings/prom_config")
                 .unwrap_or_default();
         config
     }
@@ -368,10 +366,7 @@ impl SaveState {
             TextSize::XLarge => self.text_x_large = true
         }
         let save: Result<(), confy::ConfyError> =
-            confy::store(
-                "prometheus",
-                "prom_config",
-                self);
+            confy::store_path("./settings/prom_config", self);
         match save {
             Ok(_) => (),
             Err(e) => println!("{:?}", e)
