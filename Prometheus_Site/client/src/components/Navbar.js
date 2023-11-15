@@ -14,6 +14,9 @@ const Nav = () => {
                     <li><h3><a href={ URL }>Documentation</a></h3></li>
                     <li><h3><a href="/download">Download</a></h3></li>
                 </ul>
+                <ul className='contact'>
+                    <li><h3><a href="mailto:ricardo.e.harris@gmail.com">Contact Us</a></h3></li>
+                </ul>
             </form>
         </nav>
     )

@@ -771,14 +771,12 @@ impl Prometheus {
 
                             // Create search button
                             let srch_btn: Button<'_> = header_button("🔍");
-                            let search: Response = ui.add(srch_btn);
+                            let search: Response = ui.add(srch_btn)
+                            .on_hover_text("See the website\nfor search help");
 
                             // Handle search call
                             // If clicked while off, turn on, else if clicked while on, turn off.
                             if search.clicked() && !self.state.is_searchbar() {
-                                self.state.toggle_searchbar();
-                                self.state.hide_menus();
-                            } else if search.clicked() && self.state.is_searchbar() {
                                 self.state.toggle_searchbar();
                                 self.state.hide_menus();
                             }
@@ -932,9 +930,10 @@ impl Prometheus {
                         .visuals
                         .text_color();
 
-                    ui.add(Hyperlink::from_label_and_url("About", "www.prometheusnews.com"));
+                    ui.add(Hyperlink::from_label_and_url("About", "127.0.0.1:3000"));
                 }
-            ).response;
+            )
+            .response;
 
         if settings_response.clicked() && self.state.is_searchbar() {
             self.state.toggle_searchbar();
@@ -1266,9 +1265,9 @@ fn header_button(string: &str) -> Button {
 // Helper for generating combo box for category
 fn category_vec() -> Vec<Category> {
     vec![
+        Category::General,
         Category::Business,
         Category::Entertainment,
-        Category::General,
         Category::Health,
         Category::Science,
         Category::Sports,

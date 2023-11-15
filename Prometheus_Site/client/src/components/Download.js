@@ -1,7 +1,17 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import Nav from "./Navbar";
 
 const Download = () => {
+	const [instructions, setInstructions] = useState("");
+
+	useEffect(() => {
+		fetch("./instructions.md")
+			.then((res) => res.text())
+			.then((text) => setInstructions(text));
+	}, []);
+
+	
 	return (
 		<>
 			<Nav />
@@ -30,6 +40,20 @@ const Download = () => {
 						here
 					</a>
 				</p>
+				<div className="about">
+					<table>
+						<thead>
+							<tr>
+								<th align="left">
+									<b><h3>Windows Instructions</h3></b>
+								</th>
+								<th>
+									<b><h3>Linux Instructions</h3></b>
+								</th>
+							</tr>
+						</thead>
+					</table>
+				</div>
 			</center>
 		</>
 	)
