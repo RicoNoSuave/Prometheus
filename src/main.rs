@@ -930,7 +930,7 @@ impl Prometheus {
                         .visuals
                         .text_color();
 
-                    ui.add(Hyperlink::from_label_and_url("About", "127.0.0.1:3000"));
+                    ui.add(Hyperlink::from_label_and_url("About", "http://127.0.0.1:3000"));
                 }
             )
             .response;
