@@ -1163,21 +1163,24 @@ impl Prometheus {
                                     i.key_pressed(Key::Enter)
                                 )
                     {
-                    self.save_state.save(
-                        self.api_response.get_country(),
-                        self.state.is_night_mode(),
-                        self.state.get_text_size()
-                    );
+                        self.save_state.save(
+                            self.api_response.get_country(),
+                            self.state.is_night_mode(),
+                            self.state.get_text_size()
+                        );
 
-                    if self.api_response.test(self.save_state.api_key.to_string()) {
-                        self.api_response.api_key = self.save_state.api_key.to_string();
+                        if self.api_response.test(self.save_state.api_key.to_string()) {
+                            self.api_response.api_key = self.save_state.api_key.to_string();
+                        } else {
+                            self.save_state.api_key = "".to_string();
+                        }
+
+                        self.api_response.update();
                     }
-
-                    self.api_response.update();
-                }
-                ui.label("If you do not have an API-Key, please visit");
-                ui.hyperlink("https://newsapi.org");
-            });
+                    ui.label("If you do not have an API-Key, please visit");
+                    ui.hyperlink("https://newsapi.org");
+            }
+        );
     }
 }
 
